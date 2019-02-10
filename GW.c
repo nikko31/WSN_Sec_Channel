@@ -9,12 +9,35 @@
 #define def_key_size 256
 
 
+typedef struct secretTStruct secretTStr;
+struct secretTStruct
+{
+    uint8_t node_ID[def_key_size/8];
+    uint8_t t[def_key_size/8];
+};
+
+typedef struct secondMessageStruct secondMessageStr;
+struct secondMessageStruct
+{
+    uint8_t group_ID[def_key_size/8];
+    uint8_t hmac[def_key_size/8];
+    uint8_t partial_group_key[def_key_size/8];
+    secretTStr secretTS[NUM_NODES-1];
+};
+
 typedef struct firstMessageStruct firstMessageStr;
 struct firstMessageStruct
 {
-    uint8_t idUser[def_key_size/8];
-    uint8_t first[def_key_size/8];
-    uint8_t second[def_key_size/8];
+    uint8_t group_ID[def_key_size/8];
+    uint8_t hmac[def_key_size/8];
+    uint8_t message[def_key_size/8];
+};
+
+typedef struct joinMessageStruct joinMessageStr;
+struct joinMessageStruct
+{
+    uint8_t group_ID[def_key_size/8];
+    uint8_t hash_of_secret_GW[def_key_size/8];
 };
 
 //addresses of nodes
@@ -23,6 +46,12 @@ linkaddr_t addr_nodes[NUM_NODES];
 /*
   ---------------------PARAMETERS PROTOCOL
 */
+uint8_t group_ID[def_key_size/8]={{0}};
+uint8_t one_time_pad[def_key_size/8]={{0}};
+uint8_t x_secret[def_key_size/8]={{0}};
+secretTStr secretTS[NUM_NODES-1];
+uint8_t group_key[def_key_size/8];
+
 uint8_t count=1;
 uint8_t count2=1;
 uint8_t userID[def_key_size/8]={{0}};
@@ -80,121 +109,26 @@ static int test_readhex(uint8_t *buf, const char *str, int maxbytes)
 }
 
 /*---------------------------------------------------------------------------*/
+static void broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from);
 static void sent_uc(struct unicast_conn *c, int status, int num_tx);
 static void recv_uc(struct unicast_conn *c, const linkaddr_t *from);
+
 static const struct unicast_callbacks unicast_callbacks = {recv_uc, sent_uc};
 static struct unicast_conn uc;
+static const struct broadcast_callbacks broadcast_call = {broadcast_recv};
+static struct broadcast_conn broadcast;
+
 PROCESS(example_broadcast_process, "Gateway");
 AUTOSTART_PROCESSES(&example_broadcast_process);
 
+static void broadcast_recv(struct broadcast_conn *c, const linkaddr_t *from){
+
+}
 
 static void recv_uc(struct unicast_conn *c, const linkaddr_t *from)
 {
     uint8_t i=0;
-    firstMessageStr firstMessageS;
-    uint8_t passwordImageSens[def_key_size/8]={{0}};
-    uint8_t passwordImageUser[def_key_size/8]={{0}};
-    if(from->u8[0]==2)
-    {
-        if(count==1){
-           
-            memcpy((firstMessageStr *)&firstMessageS,(firstMessageStr *) packetbuf_dataptr(), sizeof(firstMessageStr));
-            addr_sens.u8[0] = from->u8[0];
-            addr_sens.u8[1] = from->u8[1];
-            powertrace_print("FIRST 1MESSAGEXOR");
-            for(i=0; i<def_key_size/8; i++){
-                passwordImageSens[i] = (firstMessageS.first)[i]^sensID[i];
-            }
-            powertrace_print("FIRST 2MESSAGEXOR");
-            for(i=0; i<def_key_size/8; i++){
-                firstMessage[i] = passwordImageSens[i]^sharedSecredKey[i];
-            }
-            packetbuf_copyfrom(firstMessage, sizeof(firstMessage));
-            unicast_send(&uc, &addr_sens);
-            count=2;
-            powertrace_print("END1");
-        }else
-        {
-            uint8_t i=0;
-            uint8_t firstMessageTemp[def_key_size/8]={{0}};
-            uint8_t firstMessageTemp2[def_key_size/8]={{0}};
-            //uint8_t firstMessageTemp[def_key_size/8]={{0}};
-            //signedMessage=(signedMessageStr *) packetbuf_dataptr();
-            powertrace_print("RECEIVED SENSOR_MESSAGE2");
-            memcpy((uint8_t *)firstMessage,(uint8_t *) packetbuf_dataptr(), sizeof(firstMessage));
-
-            powertrace_print("SECOND MESSAGEXOR");
-            for(i=0; i<def_key_size/8; i++){
-                firstMessageTemp[i] = xGwSens[i]^sharedSecredKey[i];
-            }
-            powertrace_print(" HASH ");
-            sha3(firstMessageTemp, def_key_size/8, firstMessageTemp2, def_key_size/8);
-           
-            /* Confirm proper reception of SK*/
-            if(memcmp(firstMessage, firstMessageTemp2, def_key_size/8)==0)
-            {
-                getRandomBytes(xGwSensNew, def_key_size/8);
-               
-                for(i=0;i<def_key_size/8;i++){
-                    firstMessageTemp[i]=sharedSecredKey[i]^xGwSensNew[i];
-                }
-                powertrace_print("END2");
-                packetbuf_copyfrom(firstMessageTemp, sizeof(firstMessageTemp));
-                unicast_send(&uc, &addr_sens);
-                powertrace_print("SEND_SENS second");
-            }
-        }
-    }
-    else{
-       
-        if(count2==1){
-            powertrace_print("RECEIVED USER_MESSAGE1");
-            memcpy((firstMessageStr *)&firstMessageS,(firstMessageStr *) packetbuf_dataptr(), sizeof(firstMessageStr));
-            addr_user.u8[0] = from->u8[0];
-            addr_user.u8[1] = from->u8[1];
-            powertrace_print("FIRST USER_1MESSAGEXOR");
-            for(i=0; i<def_key_size/8; i++){
-                passwordImageSens[i] = (firstMessageS.first)[i]^sensID[i];
-            }
-            powertrace_print("FIRST USER_2MESSAGEXOR");
-            for(i=0; i<def_key_size/8; i++){
-                firstMessage[i] = passwordImageSens[i]^sharedSecredKey[i];
-            }
-            packetbuf_copyfrom(firstMessage, sizeof(firstMessage));
-            unicast_send(&uc, &addr_user);
-            count2=2;
-            powertrace_print("USER_END1");
-        }
-        else{
-            uint8_t i=0;
-            uint8_t firstMessageTemp[def_key_size/8]={{0}};
-            uint8_t firstMessageTemp2[def_key_size/8]={{0}};
-            //uint8_t firstMessageTemp[def_key_size/8]={{0}};
-            //signedMessage=(signedMessageStr *) packetbuf_dataptr();
-            powertrace_print("RECEIVED USER_MESSAGE2");
-            memcpy((uint8_t *)firstMessage,(uint8_t *) packetbuf_dataptr(), sizeof(firstMessage));
-
-            powertrace_print("SECOND USER_MESSAGEXOR");
-            for(i=0; i<def_key_size/8; i++){
-                firstMessageTemp[i] = xGwUser[i]^sharedSecredKey[i];
-            }
-            powertrace_print(" USER_HASH ");
-            sha3(firstMessageTemp, def_key_size/8, firstMessageTemp2, def_key_size/8);
-            /* Confirm proper reception of SK*/
-            if(memcmp(firstMessage, firstMessageTemp2, def_key_size/8)==0)
-            {
-                getRandomBytes(xGwUserNew, def_key_size/8);
-               
-                for(i=0;i<def_key_size/8;i++){
-                    firstMessageTemp[i]=sharedSecredKey[i]^xGwUserNew[i];
-                }
-                powertrace_print("USER_END2");
-                packetbuf_copyfrom(firstMessageTemp, sizeof(firstMessageTemp));
-                unicast_send(&uc, &addr_user);
-                powertrace_print("SEND_USER second");
-            }
-        }
-    }
+    
 }
 /*---------------------------------------------------------------------------*/
 static void sent_uc(struct unicast_conn *c, int status, int num_tx)
@@ -202,27 +136,30 @@ static void sent_uc(struct unicast_conn *c, int status, int num_tx)
     powertrace_print("sent message");
 }
 
-uint8_t ii=0;
 /*---------------------------------------------------------------------------*/
 PROCESS_THREAD(example_broadcast_process, ev, data)
 {
- 
+    uint8_t i=0;
     static struct etimer et;
+    joinMessageStr joinMessageS;
+    uint8_t group_ID[def_key_size/8] = {{1}};
+    uint8_t hash_of_secret_GW[def_key_size/8] = {{0}};
 
-    uint8_t cc=0;
     PROCESS_EXITHANDLER(unicast_close(&uc);)
 
     PROCESS_BEGIN();
+    broadcast_open(&broadcast, 129, &broadcast_call);
     unicast_open(&uc, 146, &unicast_callbacks);
 
-
+    memcpy(joinMessageS.group_ID, group_ID, def_key_size/8);
+    memcpy(joinMessageS.hash_of_secret_GW, hash_of_secret_GW, def_key_size/8);
+    packetbuf_copyfrom((void *)(&joinMessageS), sizeof(joinMessageStr));
+    broadcast_send(&broadcast);
     powertrace_print("start");
     while (1)
     {
-       
         etimer_set(&et, CLOCK_SECOND * 4 + random_rand() % (CLOCK_SECOND * 4));
         PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&et));
-
     }
 
     PROCESS_END();
